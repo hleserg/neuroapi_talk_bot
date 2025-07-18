@@ -9,6 +9,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 NEUROAPI_API_KEY = os.getenv('NEUROAPI_API_KEY')
 HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
+YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID')
 
 # Проверяем наличие необходимых токенов
 if not BOT_TOKEN:
@@ -143,3 +144,55 @@ SYSTEM_PROMPT = """
 
 # Максимальное количество сообщений в контексте для каждого пользователя
 MAX_CONTEXT_MESSAGES = 500
+
+# Конфигурация Yandex Cloud TTS
+YANDEX_TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize"
+
+# Доступные голоса Yandex Cloud
+YANDEX_VOICES = {
+    "alena": {
+        "name": "Алёна",
+        "voice": "alena",
+        "emotion": "neutral",
+        "description": "Женский голос, нейтральная интонация"
+    },
+    "filipp": {
+        "name": "Филипп", 
+        "voice": "filipp",
+        "emotion": "neutral",
+        "description": "Мужской голос, нейтральная интонация"
+    },
+    "ermil": {
+        "name": "Ермил",
+        "voice": "ermil",
+        "emotion": "neutral", 
+        "description": "Мужской голос, нейтральная интонация"
+    },
+    "jane": {
+        "name": "Джейн",
+        "voice": "jane",
+        "emotion": "neutral",
+        "description": "Женский голос, нейтральная интонация"
+    },
+    "madirus": {
+        "name": "Мадирус",
+        "voice": "madirus",
+        "emotion": "neutral",
+        "description": "Мужской голос, нейтральная интонация"
+    },
+    "omazh": {
+        "name": "Омаж",
+        "voice": "omazh",
+        "emotion": "neutral",
+        "description": "Женский голос, нейтральная интонация"
+    },
+    "zahar": {
+        "name": "Захар",
+        "voice": "zahar",
+        "emotion": "neutral",
+        "description": "Мужской голос, нейтральная интонация"
+    }
+}
+
+# Голос по умолчанию
+DEFAULT_VOICE = "alena"

@@ -1,7 +1,13 @@
 import httpx
 import logging
-from typing import List, Dict, Any
-from config import NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY
+import subprocess
+import io
+from typing import List, Dict, Any, Optional
+from config import (
+    NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, 
+    MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY,
+    YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID
+)
 
 # Настраиваем логирование
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +24,10 @@ class NeuroAPIClient:
         # Хранилище контекста и выбранной модели для каждого пользователя
         self.user_contexts: Dict[int, List[Dict[str, str]]] = {}
         self.user_models: Dict[int, str] = {}
+        
+        # Хранилище настроек голосового режима для каждого пользователя
+        self.user_voice_mode: Dict[int, bool] = {}
+        self.user_voices: Dict[int, str] = {}
         
         # HTTP клиент
         self.client = httpx.AsyncClient(
@@ -162,6 +172,108 @@ class NeuroAPIClient:
         except Exception as e:
             logger.error(f"Неожиданная ошибка при транскрибации аудио: {e}")
             return "Ошибка: произошла непредвиденная ошибка при обработке аудио."
+
+    def fetch_iam_token(self) -> Optional[str]:
+        """Получить IAM токен для Yandex Cloud через yc CLI"""
+        try:
+            result = subprocess.run(
+                ['yc', 'iam', 'create-token'], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                text=True, 
+                timeout=20
+            )
+            if result.returncode == 0:
+                token = result.stdout.strip()
+                if token:
+                    logging.info('IAM токен успешно получен через yc CLI')
+                    return token
+                else:
+                    logging.error('Пустой IAM токен от yc CLI')
+            else:
+                logging.error(f'Ошибка yc CLI: {result.stderr}')
+        except Exception as e:
+            logging.error(f'Ошибка получения IAM токена: {e}')
+        return None
+
+    async def synthesize_speech(self, text: str, voice: str = DEFAULT_VOICE) -> Optional[bytes]:
+        """Синтез речи с помощью Yandex Cloud TTS"""
+        try:
+            # Получаем IAM токен
+            iam_token = self.fetch_iam_token()
+            if not iam_token:
+                logger.error("Не удалось получить IAM токен для Yandex Cloud")
+                return None
+
+            # Проверяем наличие folder_id
+            if not YANDEX_FOLDER_ID:
+                logger.error("YANDEX_FOLDER_ID не установлен в переменных окружения")
+                return None
+
+            # Получаем настройки голоса
+            voice_config = YANDEX_VOICES.get(voice, YANDEX_VOICES[DEFAULT_VOICE])
+            
+            # Подготавливаем данные для запроса
+            data = {
+                'text': text,
+                'lang': 'ru-RU',
+                'voice': voice_config['voice'],
+                'emotion': voice_config['emotion'],
+                'speed': '1.0',
+                'format': 'oggopus',
+                'folderId': YANDEX_FOLDER_ID
+            }
+
+            headers = {
+                'Authorization': f'Bearer {iam_token}',
+            }
+
+            # Отправляем запрос к Yandex TTS
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    YANDEX_TTS_URL,
+                    headers=headers,
+                    data=data
+                )
+                response.raise_for_status()
+
+            # Возвращаем аудио данные
+            return response.content
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP ошибка при запросе к Yandex TTS: {e.response.status_code} - {e.response.text}")
+            return None
+        except httpx.RequestError as e:
+            logger.error(f"Ошибка сети при запросе к Yandex TTS: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при синтезе речи: {e}")
+            return None
+
+    def is_voice_mode_enabled(self, user_id: int) -> bool:
+        """Проверить, включен ли голосовой режим для пользователя"""
+        return self.user_voice_mode.get(user_id, False)
+
+    def set_voice_mode(self, user_id: int, enabled: bool):
+        """Включить/выключить голосовой режим для пользователя"""
+        self.user_voice_mode[user_id] = enabled
+        logger.info(f"Голосовой режим для пользователя {user_id}: {'включен' if enabled else 'выключен'}")
+
+    def get_user_voice(self, user_id: int) -> str:
+        """Получить текущий голос пользователя"""
+        return self.user_voices.get(user_id, DEFAULT_VOICE)
+
+    def set_user_voice(self, user_id: int, voice_id: str) -> bool:
+        """Установить голос для пользователя"""
+        if voice_id in YANDEX_VOICES:
+            self.user_voices[user_id] = voice_id
+            logger.info(f"Голос для пользователя {user_id} установлен: {YANDEX_VOICES[voice_id]['name']}")
+            return True
+        return False
+
+    def get_available_voices(self) -> Dict[str, Dict[str, Any]]:
+        """Получить список доступных голосов"""
+        return YANDEX_VOICES
     
     async def close(self):
         """Закрыть HTTP клиент"""
