@@ -27,6 +27,9 @@ NEUROAPI_URL = "https://neuroapi.host/v1/chat/completions"
 # URL API Hugging Face Whisper
 WHISPER_API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
 
+# URL API Hugging Face для генерации изображений
+HUGGINGFACE_IMAGE_API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev"
+
 # Конфигурации моделей
 MODELS: Dict[str, Dict[str, Any]] = {
     "gemini-2.5-pro": {

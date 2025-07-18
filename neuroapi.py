@@ -6,7 +6,8 @@ from typing import List, Dict, Any, Optional
 from config import (
     NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, 
     MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY,
-    YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID
+    YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID,
+    HUGGINGFACE_IMAGE_API_URL
 )
 
 # Настраиваем логирование
@@ -274,6 +275,39 @@ class NeuroAPIClient:
     def get_available_voices(self) -> Dict[str, Dict[str, Any]]:
         """Получить список доступных голосов"""
         return YANDEX_VOICES
+
+    async def generate_image(self, prompt: str) -> Optional[bytes]:
+        """Генерация изображения с помощью FLUX.1-dev через Hugging Face API"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.huggingface_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "inputs": prompt
+            }
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    HUGGINGFACE_IMAGE_API_URL,
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+            
+            # Возвращаем байты изображения
+            return response.content
+            
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP ошибка при генерации изображения: {e.response.status_code} - {e.response.text}")
+            return None
+        except httpx.RequestError as e:
+            logger.error(f"Ошибка сети при генерации изображения: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при генерации изображения: {e}")
+            return None
     
     async def close(self):
         """Закрыть HTTP клиент"""

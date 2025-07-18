@@ -3,6 +3,9 @@ import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
 from neuroapi import neuroapi_client
 from config import BOT_TOKEN, MODELS, DEFAULT_MODEL, YANDEX_VOICES
 import io
@@ -16,7 +19,12 @@ logger = logging.getLogger(__name__)
 
 # Инициализируем бот и диспетчер
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+
+# Определяем состояния для генерации изображений
+class ImageGenerationStates(StatesGroup):
+    waiting_for_prompt = State()
 
 def create_model_keyboard() -> InlineKeyboardMarkup:
     """Создать клавиатуру с кнопками моделей"""
@@ -52,6 +60,7 @@ async def cmd_start(message: Message):
 • Вести диалог с сохранением контекста
 • Помогать с различными задачами
 • Общаться на русском языке
+• Генерировать изображения по описанию
 
 Доступные команды:
 /start - показать это приветствие
@@ -60,6 +69,7 @@ async def cmd_start(message: Message):
 /models - список доступных моделей
 /model - выбрать модель
 /current - показать текущую модель
+/generate_image - сгенерировать изображение
 
 Текущая модель: {MODELS[DEFAULT_MODEL]["name"]}
 """
@@ -149,6 +159,7 @@ async def cmd_help(message: Message):
 • Объяснять сложные концепции
 • Вести диалог с запоминанием контекста
 • Отвечать голосовыми сообщениями
+• Генерировать изображения по описанию
 
 Основные команды:
 /start - приветствие и описание возможностей
@@ -157,6 +168,7 @@ async def cmd_help(message: Message):
 /models - показать список доступных моделей
 /model - выбрать модель
 /current - показать текущую модель
+/generate_image - сгенерировать изображение
 
 Голосовые команды:
 /voice_mode_on - включить голосовые ответы
@@ -267,6 +279,63 @@ async def cmd_voice_status(message: Message):
 /voices - список всех голосов
 """
     await message.answer(status_text, parse_mode="HTML")
+
+@dp.message(Command("generate_image"))
+async def cmd_generate_image(message: Message, state: FSMContext):
+    """Команда для генерации изображения"""
+    await message.answer("🎨 Опишите изображение для генерации:")
+    await state.set_state(ImageGenerationStates.waiting_for_prompt)
+
+@dp.message(ImageGenerationStates.waiting_for_prompt)
+async def process_image_prompt(message: Message, state: FSMContext):
+    """Обработка описания для генерации изображения"""
+    user_id = message.from_user.id
+    prompt = message.text
+    
+    if not prompt:
+        await message.answer("Пожалуйста, отправьте текстовое описание изображения.")
+        return
+    
+    # Отправляем сообщение о начале генерации
+    processing_message = await message.answer("🎨 Генерирую изображение, пожалуйста подождите...")
+    
+    try:
+        await bot.send_chat_action(chat_id=message.chat.id, action="upload_photo")
+        
+        # Генерируем изображение
+        image_data = await neuroapi_client.generate_image(prompt)
+        
+        if image_data:
+            # Отправляем изображение
+            from aiogram.types import BufferedInputFile
+            
+            image_file = BufferedInputFile(
+                file=image_data,
+                filename="generated_image.png"
+            )
+            
+            await processing_message.delete()
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=image_file,
+                caption=f"🎨 Сгенерированное изображение по запросу:\n<i>{prompt}</i>",
+                parse_mode="HTML"
+            )
+        else:
+            await processing_message.edit_text(
+                "❌ Произошла ошибка при генерации изображения. "
+                "Попробуйте еще раз или измените описание."
+            )
+    
+    except Exception as e:
+        logger.error(f"Ошибка при генерации изображения для пользователя {user_id}: {e}")
+        await processing_message.edit_text(
+            "❌ Произошла ошибка при генерации изображения. Попробуйте позже."
+        )
+    
+    finally:
+        # Сбрасываем состояние
+        await state.clear()
 
 @dp.callback_query(lambda c: c.data.startswith('voice_'))
 async def process_voice_selection(callback_query: CallbackQuery):
