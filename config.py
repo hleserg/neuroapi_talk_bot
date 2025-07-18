@@ -8,6 +8,7 @@ load_dotenv()
 # Конфигурация бота
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 NEUROAPI_API_KEY = os.getenv('NEUROAPI_API_KEY')
+HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
 
 # Проверяем наличие необходимых токенов
 if not BOT_TOKEN:
@@ -16,8 +17,14 @@ if not BOT_TOKEN:
 if not NEUROAPI_API_KEY:
     raise ValueError("NEUROAPI_API_KEY не найден в переменных окружения")
 
+if not HUGGINGFACE_API_KEY:
+    raise ValueError("HUGGINGFACE_API_KEY не найден в переменных окружения")
+
 # URL API NeuroAPI
 NEUROAPI_URL = "https://neuroapi.host/v1/chat/completions"
+
+# URL API Hugging Face Whisper
+WHISPER_API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
 
 # Конфигурации моделей
 MODELS: Dict[str, Dict[str, Any]] = {

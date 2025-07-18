@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from neuroapi import neuroapi_client
@@ -164,8 +164,51 @@ async def cmd_current(message: Message):
 """
     await message.answer(current_text, parse_mode="HTML")
 
-@dp.message()
-async def handle_message(message: Message):
+@dp.message(F.voice)
+async def handle_voice_message(message: Message):
+    """Обработчик голосовых сообщений"""
+    user_id = message.from_user.id
+    
+    # Отправляем сообщение о том, что аудио получено
+    processing_message = await message.answer("🎤 Аудио получено, обрабатываю...")
+    
+    try:
+        # Скачиваем аудиофайл
+        voice_file = await bot.get_file(message.voice.file_id)
+        voice_io = await bot.download_file(voice_file.file_path)
+        
+        # Распознаем речь
+        transcribed_text = await neuroapi_client.transcribe_audio(voice_io.read())
+        
+        if transcribed_text.startswith("Ошибка:"):
+            await processing_message.edit_text(transcribed_text)
+            return
+            
+        # Показываем распознанный текст
+        await processing_message.edit_text(f"<i>Распознанный текст:</i>\n{transcribed_text}", parse_mode="HTML")
+        
+        # Отправляем "печатает..."
+        typing_message = await message.answer("...")
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        
+        # Генерируем ответ
+        response = await neuroapi_client.generate_response(user_id, transcribed_text)
+        
+        # Отправляем ответ
+        if len(response) > 4096:
+            await typing_message.delete()
+            for i in range(0, len(response), 4096):
+                await message.answer(response[i:i+4096])
+        else:
+            await typing_message.edit_text(response)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке голосового сообщения от {user_id}: {e}")
+        await processing_message.edit_text("Произошла ошибка при обработке вашего голосового сообщения.")
+
+
+@dp.message(F.text)
+async def handle_text_message(message: Message):
     """Обработчик всех текстовых сообщений"""
     user_id = message.from_user.id
     user_text = message.text
