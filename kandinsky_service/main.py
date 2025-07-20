@@ -39,7 +39,7 @@ class HealthResponse(BaseModel):
     models_loaded: bool
 
 def load_models():
-    """Загрузка моделей Kandinsky 2.2"""
+    """Загрузка моделей Kandinsky 2.2 с повторными попытками"""
     global prior_pipeline, decoder_pipeline, device
     
     try:
@@ -47,32 +47,60 @@ def load_models():
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Используется устройство: {device}")
         
-        # Загружаем prior pipeline
-        logger.info("Загружаем Kandinsky 2.2 Prior Pipeline...")
-        prior_pipeline = KandinskyV22PriorPipeline.from_pretrained(
-            "kandinsky-community/kandinsky-2-2-prior",
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
-        )
-        prior_pipeline.to(device)
+        # Максимальное количество попыток загрузки
+        max_retries = 3
         
-        # Загружаем decoder pipeline
-        logger.info("Загружаем Kandinsky 2.2 Decoder Pipeline...")
-        decoder_pipeline = KandinskyV22Pipeline.from_pretrained(
-            "kandinsky-community/kandinsky-2-2-decoder",
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32
-        )
-        decoder_pipeline.to(device)
+        # Загружаем prior pipeline с повторными попытками
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Загружаем Kandinsky 2.2 Prior Pipeline... (попытка {attempt + 1}/{max_retries})")
+                prior_pipeline = KandinskyV22PriorPipeline.from_pretrained(
+                    "kandinsky-community/kandinsky-2-2-prior",
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    resume_download=True,  # Возобновление загрузки при обрыве
+                    force_download=False   # Не перезагружать если уже есть
+                )
+                prior_pipeline.to(device)
+                logger.info("Prior Pipeline успешно загружен!")
+                break
+            except Exception as e:
+                logger.warning(f"Попытка {attempt + 1} загрузки Prior Pipeline не удалась: {e}")
+                if attempt == max_retries - 1:
+                    raise e
+                
+        # Загружаем decoder pipeline с повторными попытками
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Загружаем Kandinsky 2.2 Decoder Pipeline... (попытка {attempt + 1}/{max_retries})")
+                decoder_pipeline = KandinskyV22Pipeline.from_pretrained(
+                    "kandinsky-community/kandinsky-2-2-decoder",
+                    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                    resume_download=True,  # Возобновление загрузки при обрыве
+                    force_download=False   # Не перезагружать если уже есть
+                )
+                decoder_pipeline.to(device)
+                logger.info("Decoder Pipeline успешно загружен!")
+                break
+            except Exception as e:
+                logger.warning(f"Попытка {attempt + 1} загрузки Decoder Pipeline не удалась: {e}")
+                if attempt == max_retries - 1:
+                    raise e
         
         # Оптимизации для экономии памяти
         if device == "cuda":
-            prior_pipeline.enable_model_cpu_offload()
-            decoder_pipeline.enable_model_cpu_offload()
+            try:
+                prior_pipeline.enable_model_cpu_offload()
+                decoder_pipeline.enable_model_cpu_offload()
+                logger.info("CPU offloading включен для экономии VRAM")
+            except Exception as e:
+                logger.warning(f"Не удалось включить CPU offloading: {e}")
             
-        logger.info("Модели успешно загружены!")
+        logger.info("Все модели успешно загружены!")
         return True
         
     except Exception as e:
         logger.error(f"Ошибка при загрузке моделей: {e}")
+        logger.error("Возможные причины: проблемы с сетью, недостаток места на диске, проблемы с Hugging Face Hub")
         return False
 
 @app.on_event("startup")
@@ -82,12 +110,13 @@ async def startup_event():
     try:
         success = load_models()
         if not success:
-            logger.error("Не удалось загрузить модели!")
-            raise RuntimeError("Ошибка загрузки моделей")
-        logger.info("Сервис Kandinsky 2.2 успешно запущен!")
+            logger.error("Не удалось загрузить модели при старте!")
+            logger.info("Сервис будет работать, но модели нужно будет загрузить позже через /reload")
+        else:
+            logger.info("Сервис Kandinsky 2.2 успешно запущен!")
     except Exception as e:
-        logger.error(f"Критическая ошибка при запуске: {e}")
-        raise
+        logger.error(f"Ошибка при запуске: {e}")
+        logger.info("Сервис продолжит работу, но без загруженных моделей")
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -147,6 +176,20 @@ async def generate_image(request: ImageGenerationRequest):
         logger.error(f"Ошибка при генерации изображения: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка генерации: {str(e)}")
 
+@app.post("/reload")
+async def reload_models():
+    """Повторная загрузка моделей"""
+    logger.info("Запрос на повторную загрузку моделей...")
+    try:
+        success = load_models()
+        if success:
+            return {"status": "success", "message": "Модели успешно загружены"}
+        else:
+            raise HTTPException(status_code=500, detail="Не удалось загрузить модели")
+    except Exception as e:
+        logger.error(f"Ошибка при перезагрузке моделей: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка перезагрузки: {str(e)}")
+
 @app.get("/")
 async def root():
     """Корневой эндпоинт"""
@@ -156,6 +199,7 @@ async def root():
         "endpoints": {
             "/health": "Проверка статуса сервиса",
             "/generate": "POST - Генерация изображения",
+            "/reload": "POST - Повторная загрузка моделей",
             "/docs": "Swagger документация"
         }
     }
