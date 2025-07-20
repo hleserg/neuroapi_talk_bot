@@ -6,6 +6,12 @@
 
 **Причина:** Конфликт версий между пакетами diffusers, transformers, accelerate и huggingface-hub.
 
+### Ошибка: "A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x"
+
+**Причина:** PyTorch был скомпилирован для NumPy 1.x, но установился NumPy 2.x.
+
+**Решение:** Добавлена фиксация версии `numpy<2.0.0` в requirements.txt для совместимости.
+
 **Решение 1 (автоматическое):**
 Dockerfile уже настроен для автоматического решения этой проблемы:
 ```bash
