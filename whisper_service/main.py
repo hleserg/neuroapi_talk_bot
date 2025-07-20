@@ -15,24 +15,54 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Whisper Speech Recognition Service", version="1.0.0")
 
-# Проверка доступности GPU
-device = "cuda" if torch.cuda.is_available() else "cpu"
-logger.info(f"Используется устройство: {device}")
+# Проверка доступности GPU с обработкой ошибок
+device = "cpu"  # По умолчанию CPU
+try:
+    if torch.cuda.is_available():
+        # Проверяем, что CUDA действительно работает
+        torch.cuda.init()
+        torch.tensor([1.0]).cuda()
+        device = "cuda"
+        logger.info(f"CUDA доступен. Используется устройство: {device}")
+        logger.info(f"CUDA версия: {torch.version.cuda}")
+        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        logger.info("CUDA недоступен. Используется CPU")
+except Exception as e:
+    logger.warning(f"Ошибка инициализации CUDA: {e}")
+    logger.info("Переключение на CPU режим")
+    device = "cpu"
+
+logger.info(f"Финальное устройство: {device}")
 
 # Глобальная переменная для модели
 model = None
 executor = ThreadPoolExecutor(max_workers=2)
 
 def load_whisper_model():
-    """Загрузка модели Whisper Medium"""
-    global model
+    """Загрузка модели Whisper Medium с fallback на CPU"""
+    global model, device
     try:
         logger.info("Загрузка модели Whisper Medium...")
-        model = whisper.load_model("medium", device=device)
-        logger.info(f"Модель Whisper Medium успешно загружена на {device}")
-        return True
+        
+        # Попытка загрузки на выбранном устройстве
+        try:
+            model = whisper.load_model("medium", device=device)
+            logger.info(f"Модель Whisper Medium успешно загружена на {device}")
+            return True
+        except Exception as e:
+            if device == "cuda":
+                logger.warning(f"Ошибка загрузки на CUDA: {e}")
+                logger.info("Переключение на CPU режим...")
+                device = "cpu"
+                model = whisper.load_model("medium", device=device)
+                logger.info(f"Модель Whisper Medium успешно загружена на {device}")
+                return True
+            else:
+                raise e
+                
     except Exception as e:
-        logger.error(f"Ошибка при загрузке модели Whisper: {e}")
+        logger.error(f"Критическая ошибка при загрузке модели Whisper: {e}")
         return False
 
 def transcribe_sync(audio_path: str) -> dict:
@@ -46,7 +76,7 @@ def transcribe_sync(audio_path: str) -> dict:
             audio_path,
             language="ru",  # Русский язык
             task="transcribe",
-            fp16=torch.cuda.is_available(),  # Используем fp16 если есть CUDA
+            fp16=(device == "cuda" and torch.cuda.is_available()),  # fp16 только для CUDA
             temperature=0.0,  # Детерминистичный результат
             beam_size=5,  # Beam search для лучшего качества
             best_of=5,  # Выбираем лучший из 5 вариантов
