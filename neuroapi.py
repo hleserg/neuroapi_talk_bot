@@ -7,7 +7,7 @@ from config import (
     NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, 
     MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY,
     YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID,
-    HUGGINGFACE_IMAGE_API_URL, OCR_SERVICE_URL
+    KANDINSKY_SERVICE_URL, OCR_SERVICE_URL
 )
 
 # Настраиваем логирование
@@ -277,21 +277,21 @@ class NeuroAPIClient:
         return YANDEX_VOICES
 
     async def generate_image(self, prompt: str) -> Optional[bytes]:
-        """Генерация изображения с помощью FLUX.1-dev через Hugging Face API"""
+        """Генерация изображения с помощью Kandinsky 2.2 через локальный сервис"""
         try:
-            headers = {
-                "Authorization": f"Bearer {self.huggingface_api_key}",
-                "Content-Type": "application/json"
-            }
-            
             payload = {
-                "inputs": prompt
+                "prompt": prompt,
+                "negative_prompt": "low quality, bad quality, blurry, pixelated",
+                "width": 768,
+                "height": 768,
+                "num_inference_steps": 50,
+                "guidance_scale": 4.0,
+                "prior_guidance_scale": 1.0
             }
             
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=180.0) as client:
                 response = await client.post(
-                    HUGGINGFACE_IMAGE_API_URL,
-                    headers=headers,
+                    f"{KANDINSKY_SERVICE_URL}/generate",
                     json=payload
                 )
                 response.raise_for_status()
@@ -300,13 +300,13 @@ class NeuroAPIClient:
             return response.content
             
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP ошибка при генерации изображения: {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP ошибка при генерации изображения через Kandinsky: {e.response.status_code} - {e.response.text}")
             return None
         except httpx.RequestError as e:
-            logger.error(f"Ошибка сети при генерации изображения: {e}")
+            logger.error(f"Ошибка сети при запросе к Kandinsky сервису: {e}")
             return None
         except Exception as e:
-            logger.error(f"Неожиданная ошибка при генерации изображения: {e}")
+            logger.error(f"Неожиданная ошибка при генерации изображения через Kandinsky: {e}")
             return None
 
     async def extract_text_from_image(self, image_data: bytes) -> str:

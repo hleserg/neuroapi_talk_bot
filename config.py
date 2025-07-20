@@ -14,6 +14,9 @@ YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID')
 # Конфигурация OCR сервиса
 OCR_SERVICE_URL = os.getenv('OCR_SERVICE_URL', 'http://localhost:8001')
 
+# Конфигурация Kandinsky сервиса
+KANDINSKY_SERVICE_URL = os.getenv('KANDINSKY_SERVICE_URL', 'http://localhost:8002')
+
 # Проверяем наличие необходимых токенов
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не найден в переменных окружения")
@@ -30,8 +33,6 @@ NEUROAPI_URL = "https://neuroapi.host/v1/chat/completions"
 # URL API Hugging Face Whisper
 WHISPER_API_URL = "https://api-inference.huggingface.co/models/openai/whisper-large-v3"
 
-# URL API Hugging Face для генерации изображений
-HUGGINGFACE_IMAGE_API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-dev"
 
 # Конфигурации моделей
 MODELS: Dict[str, Dict[str, Any]] = {
