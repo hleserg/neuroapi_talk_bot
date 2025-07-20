@@ -7,7 +7,7 @@ from config import (
     NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, 
     MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY,
     YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID,
-    KANDINSKY_SERVICE_URL, OCR_SERVICE_URL
+    KANDINSKY_SERVICE_URL, OCR_SERVICE_URL, WHISPER_SERVICE_URL
 )
 
 # Настраиваем логирование
@@ -141,35 +141,40 @@ class NeuroAPIClient:
             return "Извините, произошла неожиданная ошибка. Попробуйте еще раз."
 
     async def transcribe_audio(self, audio_data: bytes) -> str:
-        """Транскрибация аудио с помощью Whisper API"""
+        """Транскрибация аудио с помощью локального Whisper Medium сервиса"""
         try:
-            headers = {
-                "Authorization": f"Bearer {self.huggingface_api_key}",
-                "Content-Type": "audio/ogg"
-            }
+            # Формируем данные для отправки
+            files = {'file': ('voice.ogg', audio_data, 'audio/ogg')}
             
             async with httpx.AsyncClient(timeout=240.0) as client:
                 response = await client.post(
-                    self.whisper_api_url,
-                    headers=headers,
-                    content=audio_data
+                    f"{WHISPER_SERVICE_URL}/transcribe",
+                    files=files
                 )
                 response.raise_for_status()
             
             response_data = response.json()
             
-            if "text" in response_data:
-                return response_data["text"]
+            if response_data.get("success") and "text" in response_data:
+                transcribed_text = response_data["text"].strip()
+                if transcribed_text:
+                    logger.info(f"Whisper транскрибация успешна: '{transcribed_text[:100]}...'")
+                    return transcribed_text
+                else:
+                    logger.warning("Whisper вернул пустой текст")
+                    return "Ошибка: не удалось распознать речь в аудио."
             else:
-                logger.error(f"Неожиданный формат ответа от Whisper API: {response_data}")
+                logger.error(f"Неожиданный формат ответа от Whisper сервиса: {response_data}")
                 return "Ошибка: не удалось распознать речь."
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP ошибка при запросе к Whisper API: {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP ошибка при запросе к Whisper сервису: {e.response.status_code} - {e.response.text}")
+            if e.response.status_code == 503:
+                return "Ошибка: Whisper сервис еще загружается. Попробуйте через минуту."
             return "Ошибка: сервис распознавания речи временно недоступен."
         except httpx.RequestError as e:
-            logger.error(f"Ошибка сети при запросе к Whisper API: {e}")
-            return "Ошибка: проблема с сетевым подключением к сервису распознавания."
+            logger.error(f"Ошибка сети при запросе к Whisper сервису: {e}")
+            return "Ошибка: проблема с подключением к сервису распознавания речи."
         except Exception as e:
             logger.error(f"Неожиданная ошибка при транскрибации аудио: {e}")
             return "Ошибка: произошла непредвиденная ошибка при обработке аудио."

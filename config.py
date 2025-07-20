@@ -17,6 +17,9 @@ OCR_SERVICE_URL = os.getenv('OCR_SERVICE_URL', 'http://localhost:8001')
 # Конфигурация Kandinsky сервиса
 KANDINSKY_SERVICE_URL = os.getenv('KANDINSKY_SERVICE_URL', 'http://localhost:8002')
 
+# Конфигурация Whisper сервиса
+WHISPER_SERVICE_URL = os.getenv('WHISPER_SERVICE_URL', 'http://localhost:8003')
+
 # Проверяем наличие необходимых токенов
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не найден в переменных окружения")
