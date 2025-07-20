@@ -455,6 +455,109 @@ async def handle_voice_message(message: Message):
         logger.error(f"Ошибка при обработке голосового сообщения от {user_id}: {e}")
         await processing_message.edit_text("Произошла ошибка при обработке вашего голосового сообщения.")
 
+@dp.message(F.photo)
+async def handle_photo_message(message: Message):
+    """Обработчик изображений с OCR"""
+    user_id = message.from_user.id
+    
+    # Отправляем сообщение о том, что изображение получено
+    processing_message = await message.answer("🖼️ Изображение получено, распознаю текст...")
+    
+    try:
+        # Получаем самое большое изображение
+        photo = message.photo[-1]
+        
+        # Скачиваем изображение
+        photo_file = await bot.get_file(photo.file_id)
+        photo_io = await bot.download_file(photo_file.file_path)
+        
+        # Распознаем текст
+        extracted_text = await neuroapi_client.extract_text_from_image(photo_io.read())
+        
+        if extracted_text.startswith("Ошибка:"):
+            await processing_message.edit_text(extracted_text)
+            return
+            
+        if not extracted_text.strip():
+            await processing_message.edit_text("На изображении не найден текст для распознавания.")
+            return
+            
+        # Показываем распознанный текст
+        await processing_message.edit_text(
+            f"📝 <b>Распознанный текст:</b>\n\n{extracted_text}", 
+            parse_mode="HTML"
+        )
+        
+        # Генерируем ответ на основе распознанного текста
+        typing_message = await message.answer("💭 Анализирую текст...")
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        
+        # Создаем промпт для ИИ
+        ai_prompt = f"Пользователь прислал изображение с текстом. Распознанный текст: '{extracted_text}'. Проанализируй этот текст и дай полезный ответ или комментарий."
+        
+        response = await neuroapi_client.generate_response(user_id, ai_prompt)
+        
+        # Проверяем, включен ли голосовой режим
+        if neuroapi_client.is_voice_mode_enabled(user_id):
+            # Удаляем сообщение с точками
+            await typing_message.delete()
+            
+            # Отправляем сообщение о генерации голоса
+            voice_message = await message.answer("🎤 Генерирую голосовое сообщение...")
+            
+            # Получаем голос пользователя
+            user_voice = neuroapi_client.get_user_voice(user_id)
+            
+            # Синтезируем речь
+            audio_data = await neuroapi_client.synthesize_speech(response, user_voice)
+            
+            if audio_data:
+                # Отправляем голосовое сообщение
+                from aiogram.types import BufferedInputFile
+                
+                audio_file = BufferedInputFile(
+                    file=audio_data,
+                    filename="voice_response.ogg"
+                )
+                
+                await voice_message.delete()
+                await bot.send_voice(
+                    chat_id=message.chat.id,
+                    voice=audio_file
+                )
+                
+                # Также отправляем текстовую версию для удобства
+                text_prefix = "<i>Текст:</i> "
+                max_length = 4096 - len(text_prefix)
+                
+                if len(response) > max_length:
+                    # Разбиваем на части
+                    for i in range(0, len(response), max_length):
+                        chunk = response[i:i+max_length]
+                        if i == 0:
+                            await message.answer(f"{text_prefix}{chunk}", parse_mode="HTML")
+                        else:
+                            await message.answer(chunk)
+                else:
+                    await message.answer(f"{text_prefix}{response}", parse_mode="HTML")
+            else:
+                # Если не удалось синтезировать речь, отправляем текстом
+                await voice_message.edit_text(
+                    f"❌ Не удалось синтезировать речь. Отправляю текстом:\n\n{response}"
+                )
+        else:
+            # Обычный текстовый режим
+            if len(response) > 4096:
+                await typing_message.delete()
+                for i in range(0, len(response), 4096):
+                    await message.answer(response[i:i+4096])
+            else:
+                await typing_message.edit_text(response)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке изображения от пользователя {user_id}: {e}")
+        await processing_message.edit_text("Произошла ошибка при обработке изображения.")
+
 
 @dp.message(F.text)
 async def handle_text_message(message: Message):

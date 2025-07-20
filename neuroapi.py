@@ -7,7 +7,7 @@ from config import (
     NEUROAPI_URL, NEUROAPI_API_KEY, MODELS, DEFAULT_MODEL, SYSTEM_PROMPT, 
     MAX_CONTEXT_MESSAGES, WHISPER_API_URL, HUGGINGFACE_API_KEY,
     YANDEX_TTS_URL, YANDEX_VOICES, DEFAULT_VOICE, YANDEX_FOLDER_ID,
-    HUGGINGFACE_IMAGE_API_URL
+    HUGGINGFACE_IMAGE_API_URL, OCR_SERVICE_URL
 )
 
 # Настраиваем логирование
@@ -308,6 +308,37 @@ class NeuroAPIClient:
         except Exception as e:
             logger.error(f"Неожиданная ошибка при генерации изображения: {e}")
             return None
+
+    async def extract_text_from_image(self, image_data: bytes) -> str:
+        """Извлечение текста из изображения с помощью PaddleOCR сервиса"""
+        try:
+            # Формируем данные для отправки
+            files = {'file': ('image.jpg', image_data, 'image/jpeg')}
+            
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{OCR_SERVICE_URL}/ocr/extract_text_simple",
+                    files=files
+                )
+                response.raise_for_status()
+            
+            response_data = response.json()
+            
+            if response_data.get("success"):
+                return response_data.get("text", "")
+            else:
+                logger.error("OCR сервис вернул ошибку")
+                return "Ошибка: не удалось распознать текст на изображении."
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP ошибка при запросе к OCR сервису: {e.response.status_code} - {e.response.text}")
+            return "Ошибка: OCR сервис временно недоступен."
+        except httpx.RequestError as e:
+            logger.error(f"Ошибка сети при запросе к OCR сервису: {e}")
+            return "Ошибка: проблема с подключением к OCR сервису."
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при распознавании изображения: {e}")
+            return "Ошибка: произошла непредвиденная ошибка при обработке изображения."
     
     async def close(self):
         """Закрыть HTTP клиент"""

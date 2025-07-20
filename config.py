@@ -11,6 +11,9 @@ NEUROAPI_API_KEY = os.getenv('NEUROAPI_API_KEY')
 HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY')
 YANDEX_FOLDER_ID = os.getenv('YANDEX_FOLDER_ID')
 
+# Конфигурация OCR сервиса
+OCR_SERVICE_URL = os.getenv('OCR_SERVICE_URL', 'http://localhost:8001')
+
 # Проверяем наличие необходимых токенов
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не найден в переменных окружения")
